@@ -1,4 +1,4 @@
-import { Button, Box, Link } from "@chakra-ui/react";
+import { Button, Box, Link, Flex } from "@chakra-ui/react";
 import { Form, Formik } from "formik";
 import { NextPage } from "next";
 import { withUrqlClient } from "next-urql";
@@ -10,7 +10,7 @@ import { useChangePasswordMutation } from "../../generated/graphql";
 import { toErrorMap } from "../../utils/toErrorMap";
 import { createUrqlClient } from "../../utils/createUrqlClient";
 import NextLink from "next/link";
-export const ChangePassword: NextPage<{ token: string }> = ({ token }) => {
+export const ChangePassword: NextPage<{ token: string }> = () => {
   const router = useRouter();
   const [, changePassowrd] = useChangePasswordMutation();
   const [tokenError, setTokenError] = useState("");
@@ -19,9 +19,10 @@ export const ChangePassword: NextPage<{ token: string }> = ({ token }) => {
       <Formik
         initialValues={{ newPassword: "" }}
         onSubmit={async (values, { setErrors }) => {
+          console.log("query:", router.query.token);
           const response = await changePassowrd({
             newPassword: values.newPassword,
-            token,
+            token: router.query.token === "string" ? router.query.token : "",
           });
 
           if (response.data?.changePassword.errors) {
@@ -47,14 +48,19 @@ export const ChangePassword: NextPage<{ token: string }> = ({ token }) => {
             />
 
             <Box>
-              <Box color="red">
+              <Box>
                 {tokenError ? (
-                  <Box style={{ color: "red" }}> {tokenError} </Box>
+                  <Flex>
+                    <Box mar={4} style={{ color: "red" }}>
+                      {tokenError}
+                    </Box>
+
+                    <NextLink href="/forgot-password">
+                      <Link> click here to get a new one </Link>
+                    </NextLink>
+                  </Flex>
                 ) : null}
               </Box>
-              <NextLink href="/forgot-password">
-                <Link> go forget it again </Link>
-              </NextLink>
             </Box>
 
             <Button
@@ -70,12 +76,6 @@ export const ChangePassword: NextPage<{ token: string }> = ({ token }) => {
       </Formik>
     </Wrapper>
   );
-};
-
-ChangePassword.getInitialProps = ({ query }) => {
-  return {
-    token: query.token as string,
-  };
 };
 
 export default withUrqlClient(createUrqlClient, { ssr: false })(ChangePassword);

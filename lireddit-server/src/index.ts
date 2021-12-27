@@ -14,12 +14,28 @@ import { COOKIES_NAME, __prod__ } from "./constants";
 import { ApolloServerPluginLandingPageGraphQLPlayground } from "apollo-server-core";
 import cors from "cors";
 import { sendEmail } from "./utils/sendEmail";
+import { createConnection } from "typeorm";
 import { User } from "./entities/User";
+import { Post } from "./entities/Post";
+import path from "path";
+import { Updoot } from "./entities/Updoots";
 
 const main = async () => {
-  sendEmail("bob@bob.com", "hey there");
-  const orm = await MikroORM.init(microConfig);
-  await orm.getMigrator().up();
+  const conn = await createConnection({
+    type: "postgres",
+    database: "lireddit2",
+    username: "sebas",
+    password: "12345678",
+    logging: true,
+    synchronize: true,
+    migrations: [path.join(__dirname, "./migrations/*")],
+    entities: [Post, User, Updoot],
+  });
+
+  await conn.runMigrations();
+
+  //const orm = await MikroORM.init(microConfig);
+  //await orm.getMigrator().up();
   //const post = orm.em.create(Post, { title: "my first post" });
   //await orm.em.persistAndFlush(post);
   //const posts = await orm.em.find(Post, {});
@@ -62,7 +78,7 @@ const main = async () => {
       resolvers: [HelloResolver, PostResolver, UserResolver],
       validate: false,
     }),
-    context: ({ req, res }) => ({ em: orm.em, req, res, redis }),
+    context: ({ req, res }) => ({ req, res, redis }),
   });
 
   apolloServer.start().then((res) => {
