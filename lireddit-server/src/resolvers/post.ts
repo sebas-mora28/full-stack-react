@@ -17,6 +17,7 @@ import { MyContext } from "../types";
 import { isAuth } from "../middleware/isAuth";
 import { getConnection } from "typeorm";
 import { Updoot } from "../entities/Updoots";
+import { User } from "../entities/User";
 @InputType()
 class PostInput {
   @Field()
@@ -38,6 +39,27 @@ export class PostResolver {
   @FieldResolver(() => String)
   textSnippet(@Root() root: Post) {
     return root.text.slice(0, 50);
+  }
+  @FieldResolver(() => User)
+  creator(@Root() post: Post, @Ctx() { userLoader }: MyContext) {
+    return userLoader.load(post.creatorId);
+  }
+
+  @FieldResolver(() => Int, { nullable: true })
+  async voteStatus(
+    @Root() post: Post,
+    @Ctx() { updootLoader, req }: MyContext
+  ) {
+    if (!req.session.userId) {
+      return null;
+    }
+
+    const updoot = await updootLoader.load({
+      postId: post.id,
+      userId: req.session.userId,
+    });
+
+    return updoot ? updoot.value : null;
   }
 
   @Mutation(() => Boolean)
@@ -61,8 +83,6 @@ export class PostResolver {
         `,
           [realValue, postId, userId]
         );
-
-        console.log("realValue: ", 2 * realValue);
         await tm.query(
           `
           update post
@@ -108,26 +128,14 @@ export class PostResolver {
 
     const replacements: any[] = [realLimitPlusOne];
 
-    if (req.session.userId) {
-      replacements.push(req.session.userId);
-    }
-
-    let cursorIdx = 3;
     if (cursor) {
       replacements.push(new Date(parseInt(cursor)));
-      cursorIdx = replacements.length;
     }
 
     const posts = await getConnection().query(
       `
-      select p.*, json_build_object('username', u.username, 'id', u.id, 'email', u.email, 'createdAt', u."createdAt", 'updatedAt', u."updatedAt") creator,
-      ${
-        req.session.userId
-          ? '(select value from updoot where "userId" = $2 and "postId" = p.id) "voteStatus"'
-          : 'null as "voteStatus"'
-      } from post p
-      inner join public.user u on u.id = p."creatorId"
-      ${cursor ? `where p."createdAt"' < ${cursorIdx}` : ""}
+      select p.* from post p
+      ${cursor ? `where p."createdAt"' < $2` : ""}
       order by p."createdAt" DESC
       limit $1
       `,
@@ -142,7 +150,7 @@ export class PostResolver {
 
   @Query(() => Post, { nullable: true })
   post(@Arg("id", () => Int) id: number): Promise<Post | undefined> {
-    return Post.findOne(id, { relations: ["creator"] });
+    return Post.findOne(id);
   }
 
   @Mutation(() => Post)
@@ -158,23 +166,46 @@ export class PostResolver {
   }
 
   @Mutation(() => Post)
+  @UseMiddleware(isAuth)
   async updatePost(
-    @Arg("id") id: number,
-    @Arg("title", () => String, { nullable: true }) title: string
+    @Arg("id", () => Int) id: number,
+    @Arg("title") title: string,
+    @Arg("text") text: string,
+    @Ctx() { req }: MyContext
   ): Promise<Post | null> {
-    const post = await Post.findOne(id);
-    if (!post) {
-      return null;
-    }
-    if (typeof title !== "undefined") {
-      await Post.update({ id }, { title });
-    }
-    return post;
+    const result = await getConnection()
+      .createQueryBuilder()
+      .update(Post)
+      .set({ title, text })
+      .where('id  = :id and "creatorId" = :creatorId ', {
+        id,
+        creatorId: req.session.userId,
+      })
+      .returning("*")
+      .execute();
+
+    console.log("result: ", result);
+    return result.raw[0];
   }
 
   @Mutation(() => Boolean)
-  async deletePost(@Arg("id") id: number): Promise<boolean> {
-    await Post.delete(id);
+  @UseMiddleware(isAuth)
+  async deletePost(
+    @Arg("id", () => Int) id: number,
+    @Ctx() { req }: MyContext
+  ): Promise<boolean> {
+    // not cascade way
+    const post = await Post.findOne(id);
+    if (!post) {
+      return false;
+    }
+
+    if (post?.creatorId !== req.session.userId) {
+      throw new Error("not authorized");
+    }
+
+    await Updoot.delete({ postId: id });
+    await Post.delete({ id, creatorId: req.session.userId });
     return true;
   }
 }

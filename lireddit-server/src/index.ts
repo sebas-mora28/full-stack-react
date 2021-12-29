@@ -1,6 +1,4 @@
 import "reflect-metadata";
-import { MikroORM } from "@mikro-orm/core";
-import microConfig from "./mikro-orm.config";
 import express from "express";
 import { ApolloServer } from "apollo-server-express";
 import { buildSchema } from "type-graphql";
@@ -19,6 +17,8 @@ import { User } from "./entities/User";
 import { Post } from "./entities/Post";
 import path from "path";
 import { Updoot } from "./entities/Updoots";
+import { createUserLoader } from "./utils/createUserLoader";
+import { createUpdootLoader } from "./utils/createUpdootLoader";
 
 const main = async () => {
   const conn = await createConnection({
@@ -32,7 +32,7 @@ const main = async () => {
     entities: [Post, User, Updoot],
   });
 
-  await conn.runMigrations();
+  //await conn.runMigrations();
 
   //const orm = await MikroORM.init(microConfig);
   //await orm.getMigrator().up();
@@ -78,7 +78,13 @@ const main = async () => {
       resolvers: [HelloResolver, PostResolver, UserResolver],
       validate: false,
     }),
-    context: ({ req, res }) => ({ req, res, redis }),
+    context: ({ req, res }) => ({
+      req,
+      res,
+      redis,
+      userLoader: createUserLoader(),
+      updootLoader: createUpdootLoader(),
+    }),
   });
 
   apolloServer.start().then((res) => {
@@ -95,5 +101,3 @@ const main = async () => {
 main().catch((err) => {
   console.error(err);
 });
-
-console.log("Hello world!!");
